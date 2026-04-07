@@ -1,0 +1,269 @@
+import tkinter as tk
+from tkinter import simpledialog
+import sqlite3
+import sys
+import io
+
+# ---------------- DATABASE ----------------
+conn = sqlite3.connect("app.db")
+cursor = conn.cursor()
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS files (
+    id INTEGER PRIMARY KEY,
+    name TEXT,
+    content TEXT
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY,
+    username TEXT UNIQUE,
+    password TEXT
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS posts (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER,
+    title TEXT,
+    content TEXT
+)
+""")
+
+conn.commit()
+
+# ---------------- GLOBAL ----------------
+current_user = None
+current_username = None
+current_file = None
+
+# ---------------- GUI ----------------
+root = tk.Tk()
+root.title("My IDE")
+root.geometry("1000x650")
+
+# Top bar
+topbar = tk.Label(root, text="My IDE - Untitled", bg="black", fg="white")
+topbar.pack(fill="x")
+
+# Taskbar
+taskbar = tk.Frame(root, bg="gray")
+taskbar.pack(fill="x")
+
+# Main layout
+main = tk.Frame(root)
+main.pack(fill="both", expand=True)
+
+# Sidebar
+sidebar = tk.Frame(main, bg="#222", width=140)
+sidebar.pack(side="left", fill="y")
+sidebar.pack_propagate(False)
+
+# Right panel
+right = tk.Frame(main, bg="#ddd", width=300)
+right.pack(side="right", fill="y")
+right.pack_propagate(False)
+
+# Editor
+editor = tk.Text(main)
+editor.pack(fill="both", expand=True)
+
+# Terminal
+terminal = tk.Text(root, height=6, bg="black", fg="lime")
+terminal.pack(fill="x")
+
+# ---------------- SEARCH UI ----------------
+search_entry = tk.Entry(right)
+search_entry.pack(pady=5, padx=5)
+
+search_results = tk.Listbox(right)
+search_results.pack(fill="both", expand=True, padx=5, pady=5)
+
+# ---------------- FUNCTIONS ----------------
+
+def new_file():
+    global current_file
+    editor.delete("1.0", tk.END)
+    current_file = None
+    topbar.config(text="My IDE - Untitled")
+
+def save_file():
+    global current_file
+    content = editor.get("1.0", tk.END)
+
+    if current_file is None:
+        name = simpledialog.askstring("File Name", "Enter file name:")
+        current_file = name
+    else:
+        name = current_file
+
+    cursor.execute("INSERT INTO files (name, content) VALUES (?, ?)", (name, content))
+    conn.commit()
+
+    topbar.config(text=f"My IDE - {name}")
+    terminal.insert(tk.END, "\nSaved!\n")
+
+def run_code():
+    code = editor.get("1.0", tk.END)
+    terminal.delete("1.0", tk.END)
+
+    old_stdout = sys.stdout
+    sys.stdout = io.StringIO()
+
+    try:
+        exec(code)
+        output = sys.stdout.getvalue()
+    except Exception as e:
+        output = str(e)
+
+    sys.stdout = old_stdout
+    terminal.insert(tk.END, output)
+
+def search_code(event=None):
+    keyword = search_entry.get()
+    search_results.delete(0, tk.END)
+
+    cursor.execute("SELECT id, name FROM files WHERE content LIKE ?", ('%' + keyword + '%',))
+    for f in cursor.fetchall():
+        search_results.insert(tk.END, f"📄 FILE: {f[1]} (id:{f[0]})")
+
+    cursor.execute("SELECT id, title FROM posts WHERE content LIKE ?", ('%' + keyword + '%',))
+    for p in cursor.fetchall():
+        search_results.insert(tk.END, f"🌐 POST: {p[1]} (id:{p[0]})")
+
+def open_from_search(event):
+    if not search_results.curselection():
+        return
+
+    selection = search_results.get(search_results.curselection())
+
+    if "FILE" in selection:
+        file_id = int(selection.split("id:")[1].replace(")", ""))
+        cursor.execute("SELECT content FROM files WHERE id=?", (file_id,))
+    else:
+        post_id = int(selection.split("id:")[1].replace(")", ""))
+        cursor.execute("SELECT content FROM posts WHERE id=?", (post_id,))
+
+    data = cursor.fetchone()
+    if data:
+        editor.delete("1.0", tk.END)
+        editor.insert(tk.END, data[0])
+
+def post_code():
+    if current_user is None:
+        terminal.insert(tk.END, "\n⚠ Login first!\n")
+        return
+
+    content = editor.get("1.0", tk.END)
+    title = simpledialog.askstring("Post Title", "Enter title:")
+
+    if title:
+        cursor.execute(
+            "INSERT INTO posts (user_id, title, content) VALUES (?, ?, ?)",
+            (current_user, title, content)
+        )
+        conn.commit()
+
+        terminal.insert(tk.END, f"\n🌐 Posted: {title}\n")
+
+def login_window():
+    win = tk.Toplevel()
+    win.title("Login")
+
+    tk.Label(win, text="Username").pack()
+    user_entry = tk.Entry(win)
+    user_entry.pack()
+
+    tk.Label(win, text="Password").pack()
+    pass_entry = tk.Entry(win, show="*")
+    pass_entry.pack()
+
+    def login():
+        global current_user, current_username
+        u = user_entry.get()
+        p = pass_entry.get()
+
+        cursor.execute("SELECT id FROM users WHERE username=? AND password=?", (u, p))
+        user = cursor.fetchone()
+
+        if user:
+            current_user = user[0]
+            current_username = u
+            terminal.insert(tk.END, f"\nLogged in as {u}\n")
+
+            login_btn.pack_forget()
+            tk.Label(sidebar, text=f"👤 {u}", fg="white", bg="#222").pack(pady=10)
+
+            win.destroy()
+        else:
+            terminal.insert(tk.END, "\nInvalid login\n")
+
+    def signup():
+        u = user_entry.get()
+        p = pass_entry.get()
+
+        try:
+            cursor.execute("INSERT INTO users (username, password) VALUES (?, ?)", (u, p))
+            conn.commit()
+            terminal.insert(tk.END, "\nUser created\n")
+        except:
+            terminal.insert(tk.END, "\nUsername exists\n")
+
+    tk.Button(win, text="Login", command=login).pack()
+    tk.Button(win, text="Signup", command=signup).pack()
+
+def show_home():
+    home = tk.Toplevel()
+    home.title("Profile Search")
+
+    search_user = tk.Entry(home)
+    search_user.pack(pady=5)
+
+    results = tk.Listbox(home)
+    results.pack(fill="both", expand=True)
+
+    def find_user(event=None):
+        keyword = search_user.get()
+        results.delete(0, tk.END)
+
+        cursor.execute("SELECT id, username FROM users WHERE username LIKE ?", ('%' + keyword + '%',))
+        for u in cursor.fetchall():
+            results.insert(tk.END, f"{u[1]} (id:{u[0]})")
+
+    def open_user(event):
+        if not results.curselection():
+            return
+
+        sel = results.get(results.curselection())
+        uid = int(sel.split("id:")[1].replace(")", ""))
+
+        cursor.execute("SELECT title, content FROM posts WHERE user_id=?", (uid,))
+        posts = cursor.fetchall()
+
+        editor.delete("1.0", tk.END)
+        for p in posts:
+            editor.insert(tk.END, f"{p[0]}\n{p[1]}\n\n")
+
+    search_user.bind("<Return>", find_user)
+    results.bind("<<ListboxSelect>>", open_user)
+
+# ---------------- BUTTONS ----------------
+tk.Button(taskbar, text="New", command=new_file).pack(side="left")
+tk.Button(taskbar, text="Save", command=save_file).pack(side="left")
+tk.Button(taskbar, text="Run", command=run_code).pack(side="left")
+tk.Button(taskbar, text="Post", command=post_code).pack(side="left")
+
+tk.Button(sidebar, text="Home", command=show_home).pack(pady=10)
+
+login_btn = tk.Button(sidebar, text="Login", command=login_window)
+login_btn.pack(pady=10)
+
+# ---------------- BINDINGS ----------------
+search_entry.bind("<Return>", search_code)
+search_results.bind("<<ListboxSelect>>", open_from_search)
+
+# ---------------- RUN ----------------
+root.mainloop()
