@@ -43,3 +43,35 @@ terminal = tk.Text(root, height=5, bg="black", fg="lime")
 terminal.pack(fill="x")
 
 root.mainloop()
+
+#sqlintegration
+import sqlite3
+
+conn = sqlite3.connect("files.db")
+cursor = conn.cursor()
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS files (
+    id INTEGER PRIMARY KEY,
+    name TEXT,
+    content TEXT
+)
+""")
+
+conn.commit()
+
+#savebutton
+def save_file():
+    content = editor.get("1.0", tk.END)
+    cursor.execute("INSERT INTO files (name, content) VALUES (?, ?)",
+                   ("file1", content))
+    conn.commit()
+
+tk.Button(taskbar, text="Save", command=save_file).pack(side="left")
+
+#search
+def search_code(keyword):
+    cursor.execute("SELECT content FROM files WHERE content LIKE ?", ('%'+keyword+'%',))
+    results = cursor.fetchall()
+    print(results)
+
