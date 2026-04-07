@@ -75,12 +75,26 @@ editor.pack(fill="both", expand=True)
 terminal = tk.Text(root, height=6, bg="black", fg="lime")
 terminal.pack(fill="x")
 
-# ---------------- SEARCH UI ----------------
-search_entry = tk.Entry(right)
+# ---------------- SEARCH UI WITH PLACEHOLDER ----------------
+search_entry = tk.Entry(right, fg="gray")
+search_entry.insert(0, "Tap here to search code")
 search_entry.pack(pady=5, padx=5)
 
 search_results = tk.Listbox(right)
 search_results.pack(fill="both", expand=True, padx=5, pady=5)
+
+def on_entry_click(event):
+    if search_entry.get() == "Tap here to search code":
+        search_entry.delete(0, tk.END)
+        search_entry.config(fg="black")
+
+def on_focus_out(event):
+    if search_entry.get() == "":
+        search_entry.insert(0, "Tap here to search code")
+        search_entry.config(fg="gray")
+
+search_entry.bind("<FocusIn>", on_entry_click)
+search_entry.bind("<FocusOut>", on_focus_out)
 
 # ---------------- FUNCTIONS ----------------
 
@@ -124,6 +138,10 @@ def run_code():
 
 def search_code(event=None):
     keyword = search_entry.get()
+
+    if keyword == "Tap here to search code":
+        return
+
     search_results.delete(0, tk.END)
 
     cursor.execute("SELECT id, name FROM files WHERE content LIKE ?", ('%' + keyword + '%',))
