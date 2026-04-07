@@ -4,7 +4,7 @@ import sqlite3
 import sys
 import io
 
-# ---------------- DATABASE ----------------
+#DATABASE
 conn = sqlite3.connect("app.db")
 cursor = conn.cursor()
 
